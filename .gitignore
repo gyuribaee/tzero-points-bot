@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Secrets — never commit real wallets or API keys
+config.json
+*.key
+*.pem
+.env
+
+# OS / editor
+.DS_Store
+*.log

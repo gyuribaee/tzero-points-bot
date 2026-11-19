@@ -1,0 +1,12 @@
+{
+  "pointsApi": "https://testnet.tzer0.fun/api/points",
+  "baseUrl": "https://testnet.tzer0.fun",
+  "chain": "sepolia",
+
+  "wallets": [
+    {
+      "label": "main",
+      "address": ""
+    }
+  ]
+}

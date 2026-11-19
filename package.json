@@ -1,0 +1,18 @@
+{
+  "name": "tzero-points-bot",
+  "version": "1.0.0",
+  "description": "Tzero pre-flight point bot — check points, track missions, stake $T0 (testnet)",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "points": "node index.js points",
+    "stake": "node index.js stake",
+    "mission": "node index.js mission",
+    "claim": "node index.js claim"
+  },
+  "dependencies": {}
+}
