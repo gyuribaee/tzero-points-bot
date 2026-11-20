@@ -49,16 +49,35 @@ const POINTS_API = config.pointsApi || "https://testnet.tzer0.fun/api/points";
 const BASE = config.baseUrl || "https://testnet.tzer0.fun";
 
 // ---------------------------------------------------------------------------
-// HTTP helper
+// HTTP helper — with 20s timeout + 3 retries (prevents hang)
 // ---------------------------------------------------------------------------
 async function getJson(url, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout
+
     try {
-      const res = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      const res = await fetch(url, {
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) {
+        if (res.status === 404) {
+          return { error: "address_not_found", status: res.status };
+        }
+        throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      }
       return await res.json();
     } catch (err) {
-      if (attempt === retries) throw err;
+      clearTimeout(timeout);
+      if (attempt === retries) {
+        if (err.name === "AbortError") {
+          throw new Error(`Timeout: ${url} (20s)`);
+        }
+        throw err;
+      }
+      console.warn(`  [retry ${attempt}/${retries}] ${url}`);
       await new Promise((r) => setTimeout(r, 1500 * attempt));
     }
   }
@@ -71,6 +90,12 @@ async function getJson(url, retries = 3) {
 // ---------------------------------------------------------------------------
 async function checkPoints(addr) {
   const data = await getJson(`${POINTS_API}/${addr}`);
+  if (data.error === "address_not_found") {
+    console.error(`\n[error] Address not found on the site: ${addr}`);
+    console.error(`  Re-check the address — or the address is not registered yet.`);
+    process.exit(1);
+  }
+
   console.log(`\n=== Points — ${addr} ===`);
   console.log(`Total points : ${formatNum(data.total)}`);
   console.log(`Fuel         : ${formatNum(data.fuel)}  (1,000 pts per 1 ETH bought)`);
@@ -138,6 +163,12 @@ async function claimAction(addr) {
 // ---------------------------------------------------------------------------
 // CLI dispatch
 // ---------------------------------------------------------------------------
+function mustHaveWallet(cmd) {
+  if (!wallet.address) {
+    console.error(`No wallet address in config.json\n  Add a wallet to config.json, then run: node index.js ${cmd}`);
+    process.exit(1);
+  }
+}
 function formatNum(n) {
   if (typeof n !== "number") return String(n);
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
@@ -154,27 +185,75 @@ const wallet = WALLETS[0] || {};
 switch (cmd) {
   case "points":
   case "check": {
-    if (!wallet.address) { console.error("No wallet address in config.json"); process.exit(1); }
-    checkPoints(wallet.address);
+    mustHaveWallet("points");
+    await checkPoints(wallet.address).catch((err) => {
+      console.error(`\n[error] ${err.message}`);
+      process.exit(1);
+    });
     break;
   }
   case "stake": {
-    if (!wallet.address) { console.error("No wallet address in config.json"); process.exit(1); }
+    mustHaveWallet("stake");
     const action = args[1] || "report";
-    await stakeAction(action, wallet.address);
+    await stakeAction(action, wallet.address).catch((err) => {
+      console.error(`\n[error] ${err.message}`);
+      process.exit(1);
+    });
     break;
   }
   case "mission": {
-    if (!wallet.address) { console.error("No wallet address in config.json"); process.exit(1); }
-    await missionAction();
+    mustHaveWallet("mission");
+    await missionAction().catch((err) => {
+      console.error(`\n[error] ${err.message}`);
+      process.exit(1);
+    });
     break;
   }
   case "claim": {
-    if (!wallet.address) { console.error("No wallet address in config.json"); process.exit(1); }
-    await claimAction(wallet.address);
+    mustHaveWallet("claim");
+    await claimAction(wallet.address).catch((err) => {
+      console.error(`\n[error] ${err.message}`);
+      process.exit(1);
+    });
     break;
   }
-  default:
-    console.error(`Unknown command: ${cmd}\n  Commands: points | stake | mission | claim`);
+  case "help":
+  case "--help":
+  case "-h": {
+    printHelp();
+    break;
+  }
+  default: {
+    console.error(`Unknown command: ${cmd}`);
+    printHelp();
     process.exit(1);
+  }
+}
+
+function printHelp() {
+  console.log(`
+Tzero pre-flight point bot (testnet)
+
+Usage:
+  node index.js <command> [options]
+
+Commands:
+  points, check          Show your points (from site API)
+  stake [action]         Stake $T0:
+                         stake --buy <eth>   Buy $T0 then stake
+                         stake --claim-rewards  Claim staking rewards
+                         stake --unstake      Unstake all
+  mission                Show missions + crew/liftoff status
+  claim                  Claim creator fees / rewards
+  help                   Show this help
+
+Config:
+  Copy config.example.json -> config.json, then edit it:
+    - address  : your wallet address (0x...)
+    - privateKey : your wallet private key
+
+Example:
+  node index.js points
+  node index.js stake --claim-rewards
+`);
 }

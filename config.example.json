@@ -6,7 +6,8 @@
   "wallets": [
     {
       "label": "main",
-      "address": ""
+      "address": "0xYourWalletAddressHere",
+      "privateKey": "yourPrivateKeyValueHere"
     }
   ]
 }
